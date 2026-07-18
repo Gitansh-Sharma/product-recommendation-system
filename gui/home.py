@@ -150,6 +150,7 @@ class HomeScreen(ctk.CTkFrame):
         # Parse filter inputs. Invalid numeric input (e.g. letters in
         # the price box) is handled gracefully instead of crashing —
         # we simply treat it as "no bound specified".
+        keyword = self.search_entry.get()
         category = self.category_var.get()
         min_price = self._parse_float_or_none(self.min_price_entry.get())
         max_price = self._parse_float_or_none(self.max_price_entry.get())
@@ -161,7 +162,7 @@ class HomeScreen(ctk.CTkFrame):
 
         def worker():
             result = get_recommendations(
-                category=category, min_price=min_price, max_price=max_price,
+                keyword=keyword, category=category, min_price=min_price, max_price=max_price,
                 min_rating=min_rating, top_n=8,
             )
             self.after(0, lambda: self._on_recommendations_loaded(result))

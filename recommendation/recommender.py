@@ -97,14 +97,14 @@ def fetch_all_products():
     return _fetch_and_normalize_all_products()
 
 
-def get_recommendations(category=None, min_price=None, max_price=None, min_rating=None, top_n=5):
+def get_recommendations(keyword=None, category=None, min_price=None, max_price=None, min_rating=None, top_n=5):
     """
     The main function the GUI calls.
 
     Parameters mirror the "Recommendation Algorithm" input in the MVP
     doc (Category, Budget, Minimum Rating), plus min_price for
     completeness since Module 4 supports a full price RANGE, not just
-    a maximum budget.
+    a maximum budget, and `keyword` for Module 2's search bar.
 
     Returns:
         {
@@ -122,9 +122,10 @@ def get_recommendations(category=None, min_price=None, max_price=None, min_ratin
 
     all_products = fetch_result["data"]
 
-    # Step: Filter Category -> Filter Price -> Filter Rating (doc's exact order)
+    # Step: Keyword -> Filter Category -> Filter Price -> Filter Rating
     filtered_products = apply_all_filters(
         all_products,
+        keyword=keyword,
         category=category,
         min_price=min_price,
         max_price=max_price,

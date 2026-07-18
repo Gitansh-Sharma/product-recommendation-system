@@ -137,6 +137,29 @@ def get_available_categories(products):
     return sorted(set(p["category"] for p in products))
 
 
+def filter_by_keyword(products, keyword):
+    """
+    Return only products whose title (or description, as a fallback)
+    contains `keyword`, case-insensitive.
+
+    Module 2 — Product Search. This was originally missing from the
+    pipeline entirely: the GUI's search box existed but wasn't wired
+    to any filter, so every search ignored the typed keyword and just
+    returned the highest-scoring products across the WHOLE catalog —
+    which looked like "random unrelated products" with no connection
+    to what was typed. This function is what makes the search bar
+    actually do something.
+    """
+    if not keyword or not keyword.strip():
+        return products
+
+    target = keyword.strip().lower()
+    return [
+        p for p in products
+        if target in p["title"].lower() or target in p.get("description", "").lower()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Module 3 — Category Filter
 # ---------------------------------------------------------------------------
@@ -207,17 +230,17 @@ def filter_by_rating(products, min_rating=None):
 #  Fetch -> Filter Category -> Filter Price -> Filter Rating -> Score -> Sort)
 # ---------------------------------------------------------------------------
 
-def apply_all_filters(products, category=None, min_price=None, max_price=None, min_rating=None):
+def apply_all_filters(products, keyword=None, category=None, min_price=None, max_price=None, min_rating=None):
     """
-    Chain category -> price -> rating filters in the exact order shown
-    in the MVP doc's "Recommendation Algorithm" flow diagram.
+    Chain keyword -> category -> price -> rating filters.
 
-    Order matters slightly for performance (cheapest/most-likely-to-
-    eliminate filters first is generally better), but for this dataset
-    size (dozens-hundreds of products) it makes no noticeable difference —
-    we follow the doc's documented order for consistency and clarity.
+    Keyword is applied FIRST since it's usually the most specific,
+    most-eliminating filter when present (e.g. "laptop" instantly
+    narrows a 200-product catalog to a handful) — cheaper for the
+    remaining filters to work with a smaller list.
     """
-    filtered = filter_by_category(products, category)
+    filtered = filter_by_keyword(products, keyword)
+    filtered = filter_by_category(filtered, category)
     filtered = filter_by_price(filtered, min_price, max_price)
     filtered = filter_by_rating(filtered, min_rating)
     return filtered
