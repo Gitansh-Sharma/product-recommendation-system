@@ -84,6 +84,19 @@ def _fetch_and_normalize_all_products():
     return {"success": True, "data": combined_products, "error": None}
 
 
+def fetch_all_products():
+    """
+    Public wrapper around the internal fetch+normalize step, exposed so
+    the GUI can pull the full combined product list once — mainly to
+    populate the category dropdown (Module 3) with categories that
+    genuinely exist right now, rather than a hardcoded guess. See the
+    "smartphones category" bug we hit during development for why this
+    matters: assumed category names can silently not exist or not be
+    in a partial page of API results.
+    """
+    return _fetch_and_normalize_all_products()
+
+
 def get_recommendations(category=None, min_price=None, max_price=None, min_rating=None, top_n=5):
     """
     The main function the GUI calls.
@@ -134,8 +147,8 @@ def get_recommendations(category=None, min_price=None, max_price=None, min_ratin
 # Quick manual test (requires network access to FakeStore/DummyJSON)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    print("Fetching recommendations: category=smartphones, max_price=1500, min_rating=4.0 ...\n")
-    result = get_recommendations(category="smartphones", max_price=1500, min_rating=4.0, top_n=5)
+    print("Fetching recommendations: category=electronics, max_price=500, min_rating=4.0 ...\n")
+    result = get_recommendations(category="electronics", max_price=500, min_rating=4.0, top_n=5)
 
     if not result["success"]:
         print("ERROR:", result["error"])
