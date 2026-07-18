@@ -1,0 +1,19 @@
+#Product Recommendation System — Python Dependencies
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# Note: sqlite3 (used in database/) is part of Python's standard library
+# and does NOT need to be installed separately.
+ 
+# --- Core / required for MVP ---
+requests>=2.31.0          # REST API communication (api/api_client.py)
+customtkinter>=5.2.0       # Modern-styled GUI, built on Tkinter (gui/)
+Pillow>=10.0.0             # Loading/resizing product images from API URLs
+ 
+# --- Optional (per MVP doc — enable if you build these extras) ---
+# pandas>=2.1.0            # Only needed if you add data-analysis features
+                            # (e.g. exporting recommendation stats to CSV)
+ 
+
+
