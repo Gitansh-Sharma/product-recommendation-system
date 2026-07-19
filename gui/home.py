@@ -35,6 +35,7 @@ import customtkinter as ctk
 from recommendation.recommender import get_recommendations, fetch_all_products
 from recommendation.filters import get_available_categories
 from gui.product_card import ProductCard
+from gui.details import ProductDetailsWindow
 
 CARDS_PER_ROW = 4
 
@@ -201,10 +202,9 @@ class HomeScreen(ctk.CTkFrame):
             card.grid(row=row, column=col, padx=10, pady=10)
 
     def _on_card_clicked(self, product):
-        # Placeholder hook for Module 7 — Product Details screen,
-        # which we'll build next. For now, just show the title in the
-        # status label so clicking visibly does something.
-        self.status_label.configure(text=f"Selected: {product['title']} (details view coming in Module 7)")
+        # Module 7 — Product Details. Opens as a separate popup window
+        # (CTkToplevel) so the search results behind it stay untouched.
+        ProductDetailsWindow(self, product)
 
     # ------------------------------------------------------------------
     # Small parsing helpers

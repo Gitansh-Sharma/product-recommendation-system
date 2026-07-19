@@ -22,9 +22,24 @@ Design decision — image loading:
     we fall back to a plain gray placeholder rather than crashing the
     whole card — a smaller-scale version of the same "graceful failure"
     principle as Module 11's API error handling.
+
+    Images are downloaded ASYNCHRONOUSLY on a background thread per
+    card, not while the card is being built. Originally, image
+    downloads happened synchronously during widget construction — with
+    8 results, that meant waiting for 8 sequential image downloads,
+    one after another, before the results screen felt "done" loading,
+    even though the actual product DATA had already arrived instantly.
+    Now every card appears immediately with a placeholder, and each
+    image quietly pops in as its own download finishes — a much better
+    perceived-performance experience, and it matches how virtually
+    every real shopping app/website behaves.
+
+    A small in-memory cache (keyed by URL) also avoids re-downloading
+    the same image twice if the same product appears in a later search.
 """
 
 import io
+import threading
 import requests
 import customtkinter as ctk
 from PIL import Image
@@ -33,21 +48,31 @@ CARD_WIDTH = 220
 CARD_HEIGHT = 320
 IMAGE_SIZE = (160, 160)
 
+# Shared across all cards: once an image URL has been downloaded once,
+# every future card for that same product reuses it instantly instead
+# of hitting the network again.
+_image_cache = {}
 
-def _load_product_image(url):
+
+def _download_and_decode_image(url):
     """
     Download and decode a product image from `url`.
     Returns a CTkImage, or None if it couldn't be loaded (caller should
-    show a placeholder in that case).
+    show a placeholder in that case). This function does real network
+    I/O and should only ever be called from a background thread.
     """
     if not url:
         return None
+    if url in _image_cache:
+        return _image_cache[url]
     try:
         response = requests.get(url, timeout=5)
         response.raise_for_status()
         pil_image = Image.open(io.BytesIO(response.content)).convert("RGB")
         pil_image = pil_image.resize(IMAGE_SIZE)
-        return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=IMAGE_SIZE)
+        ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=IMAGE_SIZE)
+        _image_cache[url] = ctk_image
+        return ctk_image
     except Exception:
         # Broad except is intentional here: ANY image problem (timeout,
         # bad URL, corrupt file, unsupported format) should degrade to
@@ -73,16 +98,14 @@ class ProductCard(ctk.CTkFrame):
         self.product = product
         self.on_click = on_click
 
-        image = _load_product_image(product.get("image"))
-        if image:
-            image_label = ctk.CTkLabel(self, image=image, text="")
-        else:
-            # Placeholder when image couldn't load
-            image_label = ctk.CTkLabel(
-                self, text="No Image", width=IMAGE_SIZE[0], height=IMAGE_SIZE[1],
-                fg_color="gray75", corner_radius=8,
-            )
-        image_label.pack(pady=(12, 8))
+        # Show a placeholder immediately — the card should never make
+        # the user wait on a network call just to appear on screen.
+        self.image_label = ctk.CTkLabel(
+            self, text="Loading...", width=IMAGE_SIZE[0], height=IMAGE_SIZE[1],
+            fg_color="gray85", corner_radius=8,
+        )
+        self.image_label.pack(pady=(12, 8))
+        self._load_image_in_background(product.get("image"))
 
         title_label = ctk.CTkLabel(
             self,
@@ -127,6 +150,26 @@ class ProductCard(ctk.CTkFrame):
     def _handle_click(self, event):
         if self.on_click:
             self.on_click(self.product)
+
+    def _load_image_in_background(self, url):
+        def worker():
+            image = _download_and_decode_image(url)
+            # Hand the result back to the main thread. We guard with
+            # winfo_exists() because the user may have run a NEW search
+            # (which clears and rebuilds all cards) before this
+            # download finishes — trying to update a destroyed widget
+            # would raise a TclError.
+            self.after(0, lambda: self._on_image_loaded(image))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_image_loaded(self, image):
+        if not self.winfo_exists():
+            return
+        if image:
+            self.image_label.configure(image=image, text="")
+        else:
+            self.image_label.configure(text="No Image", fg_color="gray75")
 
     @staticmethod
     def _truncate(text, max_len):

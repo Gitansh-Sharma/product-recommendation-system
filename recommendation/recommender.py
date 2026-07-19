@@ -33,6 +33,9 @@ Responsibility:
         Algorithm.
 """
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 from api.api_client import (
     get_fakestore_products,
     get_dummyjson_products,
@@ -41,8 +44,25 @@ from api.api_client import (
 from recommendation.filters import normalize_products, apply_all_filters
 from recommendation.ranking import rank_products
 
+# ---------------------------------------------------------------------------
+# Simple in-memory cache
+# ---------------------------------------------------------------------------
+# Design decision: without this, EVERY search (and the initial category
+# load) re-fetches the entire catalog from both APIs from scratch, even
+# though product data doesn't meaningfully change minute-to-minute for a
+# demo/catalog API like these. That was the single biggest cause of
+# "search feels slow" — most of the wait was repeated network round-trips
+# for data we already had.
+#
+# CACHE_TTL_SECONDS controls how long a fetch is considered "fresh". A
+# short TTL (rather than caching forever) still means the app picks up
+# genuinely new/changed data periodically, without paying the network
+# cost on every click.
+_cache = {"data": None, "timestamp": 0}
+CACHE_TTL_SECONDS = 120
 
-def _fetch_and_normalize_all_products():
+
+def _fetch_and_normalize_all_products(force_refresh=False):
     """
     Fetch products from BOTH APIs and normalize them into one combined
     list. Returns a dict: {"success": bool, "data": [...], "error": str|None}
@@ -55,17 +75,31 @@ def _fetch_and_normalize_all_products():
         rank from, which produces more meaningful "Top 5" results than
         either source alone would for a small demo dataset.
 
+    Design decision — parallel fetching:
+        The two API calls don't depend on each other, so there is no
+        reason to wait for FakeStore to fully finish before starting
+        DummyJSON. Running both on a small thread pool means total wait
+        time is roughly max(fakestore_time, dummyjson_time) instead of
+        fakestore_time + dummyjson_time — close to a 2x speedup on the
+        network-bound part of every search.
+
     Error handling:
         If ONE api fails but the other succeeds, we still return
         whatever data we DID get (partial success) rather than failing
-        the whole request — a genuinely useful product should not be
-        hidden from the user just because one of two APIs had a hiccup.
-        We only report total failure if BOTH calls fail.
+        the whole request. We only report total failure if BOTH calls
+        fail.
     """
-    combined_products = []
-    fakestore_result = get_fakestore_products()
-    dummyjson_result = get_dummyjson_products()
+    now = time.time()
+    if not force_refresh and _cache["data"] is not None and (now - _cache["timestamp"]) < CACHE_TTL_SECONDS:
+        return _cache["data"]
 
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fakestore_future = executor.submit(get_fakestore_products)
+        dummyjson_future = executor.submit(get_dummyjson_products)
+        fakestore_result = fakestore_future.result()
+        dummyjson_result = dummyjson_future.result()
+
+    combined_products = []
     fakestore_ok = fakestore_result["success"]
     dummyjson_ok = dummyjson_result["success"]
 
@@ -78,10 +112,15 @@ def _fetch_and_normalize_all_products():
         combined_products += normalize_products(raw_list, source="dummyjson")
 
     if not fakestore_ok and not dummyjson_ok:
-        # Module 11 — Error Handling: both sources failed
+        # Module 11 — Error Handling: both sources failed.
+        # Deliberately NOT cached, so the next search retries the
+        # network rather than being stuck repeating a failure.
         return {"success": False, "data": [], "error": CONNECTION_ERROR_MESSAGE}
 
-    return {"success": True, "data": combined_products, "error": None}
+    result = {"success": True, "data": combined_products, "error": None}
+    _cache["data"] = result
+    _cache["timestamp"] = now
+    return result
 
 
 def fetch_all_products():
