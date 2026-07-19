@@ -36,6 +36,7 @@ from recommendation.recommender import get_recommendations, fetch_all_products
 from recommendation.filters import get_available_categories
 from gui.product_card import ProductCard
 from gui.details import ProductDetailsWindow
+from gui.compare import ProductComparisonWindow
 
 CARDS_PER_ROW = 4
 
@@ -43,6 +44,13 @@ CARDS_PER_ROW = 4
 class HomeScreen(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        # Module 8 — Product Comparison state. `_compare_selection` holds
+        # up to 2 selected products; `_card_by_product_id` lets us find
+        # and un-check a specific card's checkbox from outside the card
+        # itself (needed when enforcing the 2-item limit).
+        self._compare_selection = []
+        self._card_by_product_id = {}
 
         self._build_header()
         self._build_filter_bar()
@@ -102,6 +110,18 @@ class HomeScreen(ctk.CTkFrame):
         self.recommend_button.grid(row=0, column=5, padx=8, pady=10)
 
     def _build_results_area(self):
+        # Small toolbar above results for comparison actions (Module 8).
+        # Kept separate from the main filter bar since it acts on
+        # SELECTED results, not on the search itself.
+        compare_bar = ctk.CTkFrame(self, fg_color="transparent")
+        compare_bar.pack(fill="x", padx=20)
+
+        self.compare_button = ctk.CTkButton(
+            compare_bar, text="Compare Selected (0/2)", state="disabled",
+            command=self._on_compare_clicked,
+        )
+        self.compare_button.pack(side="left", pady=(0, 8))
+
         # Scrollable so any number of results can be shown without
         # resizing the window (important once real catalogs return
         # dozens of matches).
@@ -193,18 +213,63 @@ class HomeScreen(ctk.CTkFrame):
     def _clear_results(self):
         for widget in self.results_frame.winfo_children():
             widget.destroy()
+        # A fresh search invalidates any previous comparison selection —
+        # the previously-selected cards no longer exist.
+        self._compare_selection = []
+        self._card_by_product_id = {}
+        self._update_compare_button()
 
     def _render_product_cards(self, products):
         self._clear_results()
         for index, product in enumerate(products):
             row, col = divmod(index, CARDS_PER_ROW)
-            card = ProductCard(self.results_frame, product, on_click=self._on_card_clicked)
+            card = ProductCard(
+                self.results_frame, product,
+                on_click=self._on_card_clicked,
+                on_compare_toggle=self._on_compare_toggle,
+            )
             card.grid(row=row, column=col, padx=10, pady=10)
+            self._card_by_product_id[product["id"]] = card
 
     def _on_card_clicked(self, product):
         # Module 7 — Product Details. Opens as a separate popup window
         # (CTkToplevel) so the search results behind it stay untouched.
         ProductDetailsWindow(self, product)
+
+    # ------------------------------------------------------------------
+    # Module 8 — Product Comparison
+    # ------------------------------------------------------------------
+
+    def _on_compare_toggle(self, product, is_checked):
+        if is_checked:
+            if len(self._compare_selection) >= 2:
+                # Enforce the 2-product limit: reject the 3rd selection
+                # by immediately un-checking it, and tell the user why.
+                card = self._card_by_product_id.get(product["id"])
+                if card:
+                    card.set_compare_checked(False)
+                self.status_label.configure(
+                    text="You can only compare 2 products at a time. Uncheck one first."
+                )
+                return
+            self._compare_selection.append(product)
+        else:
+            self._compare_selection = [
+                p for p in self._compare_selection if p["id"] != product["id"]
+            ]
+
+        self._update_compare_button()
+
+    def _update_compare_button(self):
+        count = len(self._compare_selection)
+        self.compare_button.configure(text=f"Compare Selected ({count}/2)")
+        self.compare_button.configure(state="normal" if count == 2 else "disabled")
+
+    def _on_compare_clicked(self):
+        if len(self._compare_selection) != 2:
+            return  # button should be disabled in this case anyway
+        product_a, product_b = self._compare_selection
+        ProductComparisonWindow(self, product_a, product_b)
 
     # ------------------------------------------------------------------
     # Small parsing helpers

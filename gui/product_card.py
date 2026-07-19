@@ -90,13 +90,21 @@ class ProductCard(ctk.CTkFrame):
 
     `on_click`: optional callback, called with `product` when the card
     is clicked — wired up later to open Module 7 (Product Details).
+
+    `on_compare_toggle`: optional callback, called with (product, is_checked)
+    when the compare checkbox is toggled — used by Module 8 (Comparison)
+    to track which products are currently selected for a side-by-side
+    comparison. Checkbox clicks intentionally do NOT trigger `on_click`
+    (opening details) — the two actions target different intents and
+    shouldn't fire together.
     """
 
-    def __init__(self, master, product, on_click=None):
+    def __init__(self, master, product, on_click=None, on_compare_toggle=None):
         super().__init__(master, width=CARD_WIDTH, height=CARD_HEIGHT, corner_radius=10)
         self.grid_propagate(False)  # keep every card the same size regardless of content
         self.product = product
         self.on_click = on_click
+        self.on_compare_toggle = on_compare_toggle
 
         # Show a placeholder immediately — the card should never make
         # the user wait on a network call just to appear on screen.
@@ -141,15 +149,43 @@ class ProductCard(ctk.CTkFrame):
             )
             score_label.pack(pady=(0, 8))
 
+        # Compare checkbox (Module 8) — deliberately placed BEFORE the
+        # click-binding loop below, so clicking it toggles comparison
+        # selection only, without also opening the details popup.
+        if self.on_compare_toggle:
+            self.compare_var = ctk.BooleanVar(value=False)
+            self.compare_checkbox = ctk.CTkCheckBox(
+                self, text="Compare", variable=self.compare_var,
+                command=self._handle_compare_toggle, font=("Arial", 11),
+            )
+            self.compare_checkbox.pack(pady=(0, 6))
+
         # Make the whole card clickable, not just one label inside it
         if self.on_click:
             self.bind("<Button-1>", self._handle_click)
             for child in self.winfo_children():
+                # Skip the checkbox itself — it has its own click handling
+                # and shouldn't ALSO open the details popup when toggled.
+                if self.on_compare_toggle and child is self.compare_checkbox:
+                    continue
                 child.bind("<Button-1>", self._handle_click)
 
     def _handle_click(self, event):
         if self.on_click:
             self.on_click(self.product)
+
+    def _handle_compare_toggle(self):
+        if self.on_compare_toggle:
+            self.on_compare_toggle(self.product, self.compare_var.get())
+
+    def set_compare_checked(self, checked):
+        """
+        Externally force this card's checkbox state — used by HomeScreen
+        to un-check a card when the 2-selection limit is enforced from
+        outside this widget (e.g. the user tries to select a 3rd product).
+        """
+        if self.on_compare_toggle:
+            self.compare_var.set(checked)
 
     def _load_image_in_background(self, url):
         def worker():
