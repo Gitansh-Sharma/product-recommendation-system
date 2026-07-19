@@ -26,12 +26,26 @@ Design decision — availability field:
     stock" for FakeStore products, we explicitly show "Availability
     info not provided by this source" — honest about what the data
     actually contains, rather than fabricating a number.
+Design decision — wishlist and recently-viewed live here, not in HomeScreen:
+    Module 9 (Wishlist) and Module 10 (Recently Viewed) both hook into
+    THIS window rather than the card grid, because "viewing details"
+    is the natural, literal meaning of "recently viewed" — browsing a
+    grid of search result cards isn't the same as actually looking at
+    a product. Every time this window opens, the product is recorded
+    as viewed automatically. The wishlist button reads/writes directly
+    through database/database.py, the same way HomeScreen calls
+    recommendation/recommender.py directly — gui/ is allowed to call
+    either logic layer directly; it just never touches the network or
+    SQLite itself.
 """
 
 import io
 import requests
 import customtkinter as ctk
 from PIL import Image
+
+from utils.helpers import describe_availability
+from database.database import add_to_wishlist, remove_from_wishlist, is_in_wishlist, add_recently_viewed
 
 LARGE_IMAGE_SIZE = (280, 280)
 
@@ -55,15 +69,11 @@ class ProductDetailsWindow(ctk.CTkToplevel):
     A popup window showing full details for one product.
 
     `product` is a normalized product dict (see recommendation/filters.py).
-    `on_add_to_wishlist`: optional callback for Module 9 (not built yet) —
-        wiring the button now means Module 9 only needs to supply the
-        callback, not touch this file again.
     """
 
-    def __init__(self, master, product, on_add_to_wishlist=None):
+    def __init__(self, master, product):
         super().__init__(master)
         self.product = product
-        self.on_add_to_wishlist = on_add_to_wishlist
 
         self.title(product.get("title", "Product Details")[:50])
         self.geometry("500x650")
@@ -74,6 +84,14 @@ class ProductDetailsWindow(ctk.CTkToplevel):
         # getting lost behind the main window.
         self.transient(master)
         self.grab_set()
+
+        # Module 10 — Recently Viewed. Recorded the moment details are
+        # opened, since that's the clearest real signal of genuine
+        # interest in a product (as opposed to it merely appearing in
+        # a results grid). Failure here (e.g. SQLite issue) is silently
+        # non-fatal — recently-viewed is a nice-to-have, not core to
+        # the app functioning.
+        add_recently_viewed(product)
 
         self._build_ui()
 
@@ -125,14 +143,7 @@ class ProductDetailsWindow(ctk.CTkToplevel):
         self._add_field_row(container, "Brand", brand if brand else "Not specified by this source")
 
         # --- Availability (honest about missing data) ---
-        stock = self.product.get("stock", -1)
-        if stock == -1:
-            availability_text = "Availability info not provided by this source"
-        elif stock > 0:
-            availability_text = f"In stock ({stock} available)"
-        else:
-            availability_text = "Out of stock"
-        self._add_field_row(container, "Availability", availability_text)
+        self._add_field_row(container, "Availability", describe_availability(self.product))
 
         # --- Data source (transparency — worth mentioning in report) ---
         self._add_field_row(container, "Data source", self.product.get("source", "unknown").title())
@@ -151,16 +162,24 @@ class ProductDetailsWindow(ctk.CTkToplevel):
         button_row = ctk.CTkFrame(container, fg_color="transparent")
         button_row.pack(fill="x", pady=(5, 10))
 
-        wishlist_button = ctk.CTkButton(
-            button_row, text="\u2764 Add to Wishlist", command=self._handle_wishlist_click,
+        # Button label reflects current wishlist state, checked fresh
+        # every time the window opens (not cached), so it's always
+        # accurate even if the product was wishlisted in a previous
+        # session.
+        self._in_wishlist = is_in_wishlist(self.product["id"])
+        self.wishlist_button = ctk.CTkButton(
+            button_row, text=self._wishlist_button_text(), command=self._handle_wishlist_click,
         )
-        wishlist_button.pack(side="left", padx=(0, 10))
+        self.wishlist_button.pack(side="left", padx=(0, 10))
 
         close_button = ctk.CTkButton(
             button_row, text="Close", fg_color="gray40", hover_color="gray30",
             command=self.destroy,
         )
         close_button.pack(side="left")
+
+    def _wishlist_button_text(self):
+        return "\u2764 Remove from Wishlist" if self._in_wishlist else "\u2764 Add to Wishlist"
 
     def _add_field_row(self, parent, label, value):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -169,9 +188,10 @@ class ProductDetailsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(row, text=str(value), font=("Arial", 12), anchor="w").pack(side="left")
 
     def _handle_wishlist_click(self):
-        if self.on_add_to_wishlist:
-            self.on_add_to_wishlist(self.product)
+        if self._in_wishlist:
+            remove_from_wishlist(self.product["id"])
+            self._in_wishlist = False
         else:
-            # Module 9 isn't built yet — be honest about that in the UI
-            # rather than silently doing nothing.
-            print(f"[Wishlist] Would save '{self.product.get('title')}' — Module 9 not yet implemented.")
+            add_to_wishlist(self.product)
+            self._in_wishlist = True
+        self.wishlist_button.configure(text=self._wishlist_button_text())

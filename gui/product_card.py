@@ -44,6 +44,8 @@ import requests
 import customtkinter as ctk
 from PIL import Image
 
+from utils.helpers import truncate_text
+
 CARD_WIDTH = 220
 CARD_HEIGHT = 320
 IMAGE_SIZE = (160, 160)
@@ -117,7 +119,7 @@ class ProductCard(ctk.CTkFrame):
 
         title_label = ctk.CTkLabel(
             self,
-            text=self._truncate(product.get("title", "Untitled"), 40),
+            text=truncate_text(product.get("title", "Untitled"), 40),
             font=("Arial", 13, "bold"),
             wraplength=CARD_WIDTH - 20,
             justify="center",
@@ -206,7 +208,3 @@ class ProductCard(ctk.CTkFrame):
             self.image_label.configure(image=image, text="")
         else:
             self.image_label.configure(text="No Image", fg_color="gray75")
-
-    @staticmethod
-    def _truncate(text, max_len):
-        return text if len(text) <= max_len else text[: max_len - 1] + "\u2026"

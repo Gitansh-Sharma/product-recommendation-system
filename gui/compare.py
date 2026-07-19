@@ -28,6 +28,8 @@ Design decision — CTkToplevel, same as details.py:
 
 import customtkinter as ctk
 
+from utils.helpers import truncate_text, describe_availability
+
 WINNER_COLOR = "#2fa572"
 NEUTRAL_COLOR_LIGHT = ("gray90", "gray20")
 
@@ -64,11 +66,11 @@ class ProductComparisonWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(container, text="").grid(row=0, column=0)
         ctk.CTkLabel(
-            container, text=self._truncate(self.product_a.get("title", "Product A"), 30),
+            container, text=truncate_text(self.product_a.get("title", "Product A"), 30),
             font=("Arial", 14, "bold"), wraplength=200, justify="center",
         ).grid(row=0, column=1, padx=8, pady=(0, 10), sticky="ew")
         ctk.CTkLabel(
-            container, text=self._truncate(self.product_b.get("title", "Product B"), 30),
+            container, text=truncate_text(self.product_b.get("title", "Product B"), 30),
             font=("Arial", 14, "bold"), wraplength=200, justify="center",
         ).grid(row=0, column=2, padx=8, pady=(0, 10), sticky="ew")
 
@@ -141,12 +143,10 @@ class ProductComparisonWindow(ctk.CTkToplevel):
         return self._add_row(parent, row_index, "Discount", f"{disc_a:.0f}%", f"{disc_b:.0f}%", winner)
 
     def _add_availability_row(self, parent, row_index):
-        def describe(product):
-            stock = product.get("stock", -1)
-            if stock == -1:
-                return "Not provided"
-            return f"{stock} in stock" if stock > 0 else "Out of stock"
-        return self._add_row(parent, row_index, "Availability", describe(self.product_a), describe(self.product_b))
+        return self._add_row(
+            parent, row_index, "Availability",
+            describe_availability(self.product_a), describe_availability(self.product_b),
+        )
 
     def _add_text_row(self, parent, row_index, label, key, default="N/A", transform=None):
         value_a = self.product_a.get(key) or default
@@ -179,7 +179,3 @@ class ProductComparisonWindow(ctk.CTkToplevel):
             return f"Based on the recommendation engine's weighted score, \u201c{title_b}\u201d ranks higher overall ({score_b} vs {score_a})."
         else:
             return "Both products have an equal overall match score."
-
-    @staticmethod
-    def _truncate(text, max_len):
-        return text if len(text) <= max_len else text[: max_len - 1] + "\u2026"

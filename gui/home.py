@@ -37,6 +37,8 @@ from recommendation.filters import get_available_categories
 from gui.product_card import ProductCard
 from gui.details import ProductDetailsWindow
 from gui.compare import ProductComparisonWindow
+from gui.product_list_window import ProductListWindow
+from database.database import initialize_database, get_wishlist, get_recently_viewed
 
 CARDS_PER_ROW = 4
 
@@ -44,6 +46,11 @@ CARDS_PER_ROW = 4
 class HomeScreen(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        # Modules 9 & 10 rely on SQLite tables existing before any
+        # wishlist/recently-viewed action happens. Safe to call every
+        # startup — CREATE TABLE IF NOT EXISTS is a no-op afterward.
+        initialize_database()
 
         # Module 8 — Product Comparison state. `_compare_selection` holds
         # up to 2 selected products; `_card_by_product_id` lets us find
@@ -66,11 +73,32 @@ class HomeScreen(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _build_header(self):
+        header_row = ctk.CTkFrame(self, fg_color="transparent")
+        header_row.pack(fill="x", padx=20, pady=(20, 10))
+
         header = ctk.CTkLabel(
-            self, text="\U0001F6CD  Product Recommendation System",
+            header_row, text="\U0001F6CD  Product Recommendation System",
             font=("Arial", 24, "bold"),
         )
-        header.pack(pady=(20, 10))
+        header.pack(side="left")
+
+        # Modules 9 & 10 — accessible from anywhere, not tied to search
+        # results, since a saved wishlist/recently-viewed list should
+        # persist and be reachable independent of the current search.
+        button_group = ctk.CTkFrame(header_row, fg_color="transparent")
+        button_group.pack(side="right")
+
+        ctk.CTkButton(
+            button_group, text="\u2764 My Wishlist", width=130,
+            fg_color="gray30", hover_color="gray20",
+            command=self._open_wishlist,
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            button_group, text="\U0001F553 Recently Viewed", width=150,
+            fg_color="gray30", hover_color="gray20",
+            command=self._open_recently_viewed,
+        ).pack(side="left")
 
     def _build_filter_bar(self):
         filter_bar = ctk.CTkFrame(self)
@@ -270,6 +298,28 @@ class HomeScreen(ctk.CTkFrame):
             return  # button should be disabled in this case anyway
         product_a, product_b = self._compare_selection
         ProductComparisonWindow(self, product_a, product_b)
+
+    # ------------------------------------------------------------------
+    # Modules 9 & 10 — Wishlist and Recently Viewed
+    # ------------------------------------------------------------------
+
+    def _open_wishlist(self):
+        # Read fresh from SQLite every time the button is clicked,
+        # rather than caching in memory — guarantees the list always
+        # reflects the true current wishlist state, including changes
+        # made from a details window that's since been closed.
+        products = get_wishlist()
+        ProductListWindow(
+            self, products, window_title="My Wishlist",
+            empty_message="Your wishlist is empty. Open a product's details and click \u2764 Add to Wishlist.",
+        )
+
+    def _open_recently_viewed(self):
+        products = get_recently_viewed()
+        ProductListWindow(
+            self, products, window_title="Recently Viewed",
+            empty_message="No products viewed yet. Click any product card to see it here.",
+        )
 
     # ------------------------------------------------------------------
     # Small parsing helpers
